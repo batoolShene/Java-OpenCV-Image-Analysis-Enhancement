@@ -1,0 +1,87 @@
+package application;
+
+import org.opencv.core.*;
+import org.opencv.highgui.HighGui;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+
+public class EdgeDetection {
+
+	static {
+		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+	}
+
+	public static Mat robertsAlgorithm(Mat originalImg) {
+		float[] maskXData = { 1, 0, 0, -1 };
+		float[] maskYData = { 0, 1, -1, 0 };
+		Mat kernelX = new Mat(2, 2, CvType.CV_32F);
+		Mat kernelY = new Mat(2, 2, CvType.CV_32F);
+		kernelX.put(0, 0, maskXData);
+		kernelY.put(0, 0, maskYData);
+		Mat gradX = new Mat();
+		Mat gradY = new Mat();
+		Imgproc.filter2D(originalImg, gradX, CvType.CV_32F, kernelX);
+		Imgproc.filter2D(originalImg, gradY, CvType.CV_32F, kernelY);
+		Mat outputImg = new Mat();
+		Core.magnitude(gradX, gradY, outputImg);
+		Core.normalize(outputImg, outputImg, 0, 255, Core.NORM_MINMAX);
+		outputImg.convertTo(outputImg, CvType.CV_8U);
+
+		return outputImg;
+	}
+
+	public static Mat sobelAlgorithm(Mat original) {
+		Mat gray = new Mat();
+		if (original.channels() == 3)
+			Imgproc.cvtColor(original, gray, Imgproc.COLOR_BGR2GRAY);
+		else if (original.channels() == 4)
+			Imgproc.cvtColor(original, gray, Imgproc.COLOR_BGRA2GRAY);
+		else
+			gray = original;
+		Mat GX = new Mat();
+		Mat GY = new Mat();
+		Imgproc.Sobel(gray, GX, CvType.CV_32F, 1, 0, 3, 1, 0, Core.BORDER_DEFAULT);
+		Imgproc.Sobel(gray, GY, CvType.CV_32F, 0, 1, 3, 1, 0, Core.BORDER_DEFAULT);
+		Mat magnitude = new Mat();
+		Core.magnitude(GX, GY, magnitude);
+		Core.normalize(magnitude, magnitude, 0, 255, Core.NORM_MINMAX);
+		Mat sobelImg = new Mat();
+		magnitude.convertTo(sobelImg, CvType.CV_8U);
+		return sobelImg;
+	}
+
+	public static Mat prewittAlgorithm(Mat src) {
+		Mat kernelX = new Mat(3, 3, CvType.CV_32F);
+		Mat kernelY = new Mat(3, 3, CvType.CV_32F);
+		float[] kernelXData = { -1, 0, 1, -1, 0, 1, -1, 0, 1 };
+		float[] kernelYData = { -1, -1, -1, 0, 0, 0, 1, 1, 1 };
+		kernelX.put(0, 0, kernelXData);
+		kernelY.put(0, 0, kernelYData);
+		Mat gradX = new Mat();
+		Mat gradY = new Mat();
+		Imgproc.filter2D(src, gradX, CvType.CV_32F, kernelX);
+		Imgproc.filter2D(src, gradY, CvType.CV_32F, kernelY);
+		Mat edgeImage = new Mat();
+		Core.magnitude(gradX, gradY, edgeImage);
+		Core.normalize(edgeImage, edgeImage, 0, 255, Core.NORM_MINMAX);
+		edgeImage.convertTo(edgeImage, CvType.CV_8U);
+		return edgeImage;
+	}
+
+	public static void main(String[] args) {
+		String filePath = "C:\\Users\\batoo\\Desktop\\lena.png";
+		Mat src = Imgcodecs.imread(filePath, Imgcodecs.IMREAD_GRAYSCALE);
+		Mat robertsEdges = robertsAlgorithm(src);
+		Mat sobelImg = sobelAlgorithm(src);
+		Mat prewittImg = prewittAlgorithm(src);
+		HighGui.imshow("Roberts Thresholded Edge Detection", robertsEdges);
+		HighGui.imshow("Sobel Thresholded Edge Detection", sobelImg);
+		HighGui.imshow("Prewitt Thresholded Edge Detection", prewittImg);
+		Imgcodecs.imwrite("original.jpg", src);
+		Imgcodecs.imwrite("RobertsEdgeDetection.jpg", robertsEdges);
+		Imgcodecs.imwrite("SobelEdgeDetection.jpg", sobelImg);
+		Imgcodecs.imwrite("PrewittEdgeDetection.jpg", prewittImg);
+		HighGui.waitKey();
+		System.exit(0);
+	}
+}
