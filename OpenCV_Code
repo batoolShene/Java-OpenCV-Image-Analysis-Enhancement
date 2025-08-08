@@ -1,0 +1,320 @@
+package application;
+
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.Scalar;
+import org.opencv.core.Size;
+import org.opencv.core.MatOfFloat;
+import org.opencv.core.MatOfInt;
+import org.opencv.core.Point;
+import org.opencv.core.Rect;
+import org.opencv.highgui.HighGui;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+import java.util.Arrays;
+
+public class Main {
+	private static Mat grayScaleImage(Mat m) {
+		Mat grayImg = new Mat();
+		Imgproc.cvtColor(m, grayImg, Imgproc.COLOR_BGR2GRAY);
+		return grayImg;
+	}
+
+	private static Mat binaryImage(Mat m) {
+		Mat binaryImg = new Mat(m.rows(), m.cols(), m.type());
+//		Imgproc.threshold(m, binaryImg, 127, 255, Imgproc.THRESH_BINARY);
+		int threshold = 127;
+		int maxValue = 255;
+		for (int i = 0; i < m.rows(); i++) {
+			for (int j = 0; j < m.cols(); j++) {
+				double[] pixelValue = m.get(i, j);
+				double intensity = pixelValue[0]; 
+
+				if (intensity > threshold) {
+					binaryImg.put(i, j, maxValue);
+				} else {
+					binaryImg.put(i, j, 0);
+				}
+			}
+		}
+		return binaryImg;
+	}
+
+	private static double calcMean(Mat m) {
+		if (m.channels() != 1) {
+			throw new IllegalArgumentException("Input image must be grayscale.");
+		}
+
+		// Get image dimensions
+		int rows = m.rows();
+		int cols = m.cols();
+
+		// Compute the sum of pixel intensities
+		double sumIntensity = 0;
+		for (int y = 0; y < rows; y++) {
+			for (int x = 0; x < cols; x++) {
+				double intensity = m.get(y, x)[0]; // Extract intensity value
+				sumIntensity += intensity;
+			}
+		}
+
+		// Compute the mean intensity
+		return sumIntensity / (rows * cols);
+	}
+
+	private static double calculateStdDev(Mat image) {
+		double mean = calcMean(image);
+		int pixelCount = image.rows() * image.cols();
+		double sumSquareDiff = 0;
+
+		// Calculate sum of squared differences
+		for (int i = 0; i < image.rows(); i++) {
+			for (int j = 0; j < image.cols(); j++) {
+				double pixelValue = image.get(i, j)[0];
+				sumSquareDiff += Math.pow(pixelValue - mean, 2);
+			}
+		}
+
+		// Calculate standard deviation
+		double stdDev = Math.sqrt(sumSquareDiff / pixelCount);
+
+		return stdDev;
+	}
+
+	public static Mat calculateHistogram(Mat image) {
+		// Create an empty histogram
+		Mat hist = new Mat();
+
+		// Calculate histogram
+		Imgproc.calcHist(Arrays.asList(image), new MatOfInt(0), new Mat(), hist, new MatOfInt(256),
+				new MatOfFloat(0, 256));
+
+		return hist;
+	}
+
+	public static double calculateEntropy(Mat histogram, double totalPixels) {
+		// Calculate probability distribution
+		double[] probabilities = new double[256];
+		for (int i = 0; i < 256; i++) {
+			probabilities[i] = histogram.get(i, 0)[0] / totalPixels;
+		}
+
+		// Calculate entropy
+		double entropy = 0;
+		for (int i = 0; i < 256; i++) {
+			if (probabilities[i] > 0) {
+				entropy -= probabilities[i] * Math.log(probabilities[i]) / Math.log(2);
+			}
+		}
+
+		return entropy;
+	}
+
+	public static Mat flip(Mat src) {
+		// Create a new Mat for the flipped image
+		int flipCode = 1;
+		Mat flippedImg = new Mat(src.rows(), src.cols(), src.type());
+
+		// Flip the image manually
+		for (int i = 0; i < src.rows(); i++) {
+			for (int j = 0; j < src.cols(); j++) {
+				double[] pixel = src.get(i, j);
+				int newRow, newCol;
+
+				// Determine new row and column based on flipCode
+				if (flipCode == 0) { // Flip vertically
+					newRow = src.rows() - 1 - i;
+					newCol = j;
+				} else if (flipCode > 0) { // Flip horizontally
+					newRow = i;
+					newCol = src.cols() - 1 - j;
+				} else { // Flip both vertically and horizontally
+					newRow = src.rows() - 1 - i;
+					newCol = src.cols() - 1 - j;
+				}
+
+				// Copy pixel value to the flipped image
+				flippedImg.put(newRow, newCol, pixel);
+			}
+		}
+
+		return flippedImg;
+	}
+
+	private static Mat blur(Mat src, int kernelSize) {
+		Mat blurredImg = new Mat(src.rows(), src.cols(), src.type());
+
+		// Gaussian kernel
+		double[][] kernel = generateGaussianKernel(kernelSize);
+
+		// Apply convolution
+		int halfKernelSize = kernelSize / 2;
+		for (int i = 0; i < src.rows(); i++) {
+			for (int j = 0; j < src.cols(); j++) {
+				double sum = 0;
+				for (int m = -halfKernelSize; m <= halfKernelSize; m++) {
+					for (int n = -halfKernelSize; n <= halfKernelSize; n++) {
+						int rowIndex = Math.min(Math.max(i + m, 0), src.rows() - 1);
+						int colIndex = Math.min(Math.max(j + n, 0), src.cols() - 1);
+						double pixelValue = src.get(rowIndex, colIndex)[0];
+						double kernelValue = kernel[m + halfKernelSize][n + halfKernelSize];
+						sum += pixelValue * kernelValue;
+					}
+				}
+				blurredImg.put(i, j, sum);
+			}
+		}
+
+		return blurredImg;
+	}
+
+	private static double[][] generateGaussianKernel(int size) {
+		double[][] kernel = new double[size][size];
+		double sigma = 1.0;
+		double sigmaSquared = sigma * sigma;
+		double twoSigmaSquared = 2 * sigmaSquared;
+		double constant = 1 / (Math.PI * twoSigmaSquared);
+		int halfSize = size / 2;
+
+		for (int i = -halfSize; i <= halfSize; i++) {
+			for (int j = -halfSize; j <= halfSize; j++) {
+				double distanceSquared = i * i + j * j;
+				kernel[i + halfSize][j + halfSize] = constant * Math.exp(-distanceSquared / twoSigmaSquared);
+			}
+		}
+
+		// Normalize kernel
+		double sum = 0;
+		for (int i = 0; i < size; i++) {
+			for (int j = 0; j < size; j++) {
+				sum += kernel[i][j];
+			}
+		}
+		for (int i = 0; i < size; i++) {
+			for (int j = 0; j < size; j++) {
+				kernel[i][j] /= sum;
+			}
+		}
+
+		return kernel;
+	}
+
+	public static Mat negativeImage(Mat src, Scalar scalar) {
+		Mat dst = new Mat(src.rows(), src.cols(), src.type());
+
+		// Iterate through each pixel and perform subtraction
+		for (int i = 0; i < src.rows(); i++) {
+			for (int j = 0; j < src.cols(); j++) {
+				double[] pixelSrc = src.get(i, j);
+				double[] pixelDst = new double[pixelSrc.length];
+				for (int k = 0; k < pixelSrc.length; k++) {
+					pixelDst[k] = pixelSrc[k] - scalar.val[k];
+					// Ensure pixel values are within valid range
+					pixelDst[k] = Math.max(0, Math.min(255, pixelDst[k]));
+				}
+				dst.put(i, j, pixelDst);
+			}
+		}
+
+		return dst;
+	}
+
+	private static Mat cropImage(Mat image, int x, int y, int w, int h) {
+		// Create a rectangle representing the region to be cropped
+		Rect regionOfInterest = new Rect(x, y, w, h);
+
+		// Extract the region of interest from the image
+		Mat croppedImage = new Mat(image, regionOfInterest);
+
+		return croppedImage;
+	}
+
+	public static void main(String[] args) {
+		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+		// Load the image
+		String inputImagePath = "C:\\Users\\batoo\\Desktop\\lena.jpg"; // Path to the input image file
+		Mat img = Imgcodecs.imread(inputImagePath);
+		if (img.empty()) {
+			System.out.println("Failed to load the input image.");
+			return; // Exit the program if the image could not be loaded
+		}
+		int originalWidth = img.cols(); // Get the width of the input image
+		int originalHeight = img.rows();
+
+		// 1. Color to Grayscale & Binary Conversion
+		Mat grayImg = grayScaleImage(img);
+
+		Mat binaryImg = binaryImage(grayImg);
+
+		// 2. Downscaling
+		Mat downscaledGrayImg = new Mat();
+		Imgproc.resize(grayImg, downscaledGrayImg, new Size(256, 256));
+
+		// 3. Image Analysis
+		double mean = calcMean(downscaledGrayImg);
+		double standardDeviation = calculateStdDev(downscaledGrayImg);
+		System.out.println("mean = "+mean);
+		System.out.println("standard Deviation = "+standardDeviation);
+
+		Mat hist = calculateHistogram(downscaledGrayImg);
+
+		double entropy = calculateEntropy(hist, downscaledGrayImg.rows() * downscaledGrayImg.cols());
+		System.out.println("entropy = "+entropy);
+
+		// 4. Contrast Enhancement
+		Mat enhancedImg = new Mat();
+		downscaledGrayImg.convertTo(enhancedImg, -1, 1.5, 0);
+
+		// 5. Flipping and Blurring
+		Mat flippedImg = flip(grayImg);
+
+		Mat blurredImg = blur(grayImg, 5);
+
+		// 6. Negative Image
+		Mat negativeImg = negativeImage(grayImg, new Scalar(255));
+
+		// 7. crop image
+		Mat croppedImage = cropImage(grayImg, 100, 50, 200, 150);
+		
+
+		// the results
+		HighGui.imshow("Original Image", img);
+		HighGui.imshow("Grayscale Image", grayImg);
+		HighGui.imshow("Binary Image", binaryImg);
+		HighGui.imshow("Downscaled Grayscale Image", downscaledGrayImg);
+		HighGui.imshow("Contrast Enhanced Image (C)", enhancedImg);
+		HighGui.imshow("Flipped Image", flippedImg);
+		HighGui.imshow("Blurred Image", blurredImg);
+		HighGui.imshow("Negative Image", negativeImg);
+		HighGui.imshow("Cropped Image", croppedImage);
+
+		displayHistogram(hist);
+
+		HighGui.waitKey();
+		System.exit(0);
+	}
+	 private static void displayHistogram(Mat hist) {
+	        // Normalize histogram
+	        Core.normalize(hist, hist, 0, hist.rows(), Core.NORM_MINMAX, -1, new Mat());
+	        
+	        // Define histogram image size
+	        int histWidth = 512;
+	        int histHeight = 400;
+	        int binWidth = histWidth / 256;
+	        
+	        // Create histogram image
+	        Mat histImage = new Mat(histHeight, histWidth, CvType.CV_8UC3, new Scalar(0, 0, 0));
+	        
+	        // Draw histogram
+	        for (int i = 1; i < 256; i++) {
+	            Imgproc.line(histImage, new Point(binWidth * (i - 1), histHeight - Math.round(hist.get(i - 1, 0)[0])),
+	                         new Point(binWidth * i, histHeight - Math.round(hist.get(i, 0)[0])), new Scalar(255, 255, 255), 2);
+	        }
+	        
+	        // Display histogram
+	        HighGui.imshow("Histogram", histImage);
+	        HighGui.waitKey(0);
+	        HighGui.destroyAllWindows();
+	    }
+}
