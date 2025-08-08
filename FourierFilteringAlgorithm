@@ -1,0 +1,63 @@
+package application;
+
+import org.opencv.core.*;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+import java.util.Arrays;
+
+public class FourierFiltering {
+    static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
+    
+    public static void fourierFiltering(String imagePath, String filterType, int radius) {
+        // Load the image in grayscale
+        Mat img = Imgcodecs.imread(imagePath, Imgcodecs.IMREAD_GRAYSCALE);
+        if (img.empty()) {
+            throw new IllegalArgumentException("Image not found or invalid path.");
+        }
+        
+        // Expand to optimal size
+        Mat padded = new Mat();
+        int m = Core.getOptimalDFTSize(img.rows());
+        int n = Core.getOptimalDFTSize(img.cols());
+        Core.copyMakeBorder(img, padded, 0, m - img.rows(), 0, n - img.cols(), Core.BORDER_CONSTANT);
+        
+        // Convert to float and perform DFT
+        Mat planes[] = {new Mat(padded.size(), CvType.CV_32F), new Mat(padded.size(), CvType.CV_32F)};
+        Mat complexImage = new Mat();
+        padded.convertTo(planes[0], CvType.CV_32F);
+        Core.merge(Arrays.asList(planes), complexImage);
+        Core.dft(complexImage, complexImage);
+        
+        // Rearrange quadrants
+        Mat mag = new Mat();
+        Core.split(complexImage, planes);
+        Core.magnitude(planes[0], planes[1], mag);
+        Core.add(mag, Scalar.all(1), mag);
+        Core.log(mag, mag);
+        
+        // Create filter mask
+        Mat mask = Mat.ones(mag.size(), CvType.CV_32F);
+        int crow = mag.rows() / 2;
+        int ccol = mag.cols() / 2;
+        Imgproc.circle(mask, new Point(ccol, crow), radius, new Scalar(filterType.equals("high") ? 0 : 1), -1);
+        
+        // Apply mask and inverse DFT
+        Core.multiply(complexImage, mask, complexImage);
+        Core.idft(complexImage, complexImage);
+        Core.split(complexImage, planes);
+        Core.magnitude(planes[0], planes[1], planes[0]);
+        
+        // Normalize result
+        Core.normalize(planes[0], planes[0], 0, 255, Core.NORM_MINMAX);
+        Mat result = new Mat();
+        planes[0].convertTo(result, CvType.CV_8U);
+        
+        // Save and display output
+        Imgcodecs.imwrite("filtered_image.jpg", result);
+        System.out.println("Filtered image saved as filtered_image.jpg");
+    }
+    
+    public static void main(String[] args) {
+        fourierFiltering("example.jpg", "low", 30); // Example usage
+    }
+}
